@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tiny vLLM"
+  short_description: "Guide tiny-vllm development and benchmarking."
+  default_prompt: "Use $tiny-vllm while working in this repo."
