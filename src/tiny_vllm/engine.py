@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from tiny_vllm.config import EngineConfig
 from tiny_vllm.kv_cache import KVBlockAllocator
-from tiny_vllm.model_runner import MockModelRunner
+from tiny_vllm.model_runner import MockModelRunner, ModelRunner
 from tiny_vllm.request import GenerationOutput, GenerationRequest
 from tiny_vllm.scheduler import Scheduler
 
@@ -15,14 +15,19 @@ class EngineStats:
 
 
 class Engine:
-    def __init__(self, config: EngineConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: EngineConfig | None = None,
+        *,
+        model_runner: ModelRunner | None = None,
+    ) -> None:
         self.config = config or EngineConfig()
         self.scheduler = Scheduler(max_batch_size=self.config.max_batch_size)
         self.kv_cache = KVBlockAllocator(
             num_blocks=self.config.max_num_blocks,
             block_size=self.config.block_size,
         )
-        self.model_runner = MockModelRunner()
+        self.model_runner = model_runner or MockModelRunner()
         self.stats = EngineStats()
 
     def submit(self, request: GenerationRequest) -> None:

@@ -1,4 +1,18 @@
 from tiny_vllm import Engine, EngineConfig, GenerationRequest
+from tiny_vllm.request import GenerationOutput
+
+
+class RecordingRunner:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int]] = []
+
+    def generate(self, request: GenerationRequest, max_new_tokens: int) -> GenerationOutput:
+        self.calls.append((request.request_id, max_new_tokens))
+        return GenerationOutput(
+            request_id=request.request_id,
+            text=f"{request.prompt} <recorded>",
+            generated_tokens=max_new_tokens,
+        )
 
 
 def test_engine_generates_deterministic_mock_outputs_and_releases_cache() -> None:
@@ -15,6 +29,22 @@ def test_engine_generates_deterministic_mock_outputs_and_releases_cache() -> Non
     assert engine.stats.completed_requests == 2
     assert engine.stats.generated_tokens == 5
     assert engine.kv_cache.available_blocks == 4
+
+
+def test_engine_accepts_injected_model_runner() -> None:
+    runner = RecordingRunner()
+    engine = Engine(
+        EngineConfig(max_batch_size=1, max_num_blocks=4, block_size=4),
+        model_runner=runner,
+    )
+
+    engine.submit(GenerationRequest(request_id="req-a", prompt="alpha", max_new_tokens=2))
+
+    outputs = engine.run_until_complete()
+
+    assert runner.calls == [("req-a", 2)]
+    assert outputs[0].text == "alpha <recorded>"
+    assert engine.stats.completed_requests == 1
 
 
 def test_engine_does_not_leak_request_id_when_kv_allocation_fails() -> None:
