@@ -1,6 +1,6 @@
 ---
 name: tiny-vllm
-description: Guide tiny-vllm development as a learning-oriented modern LLM inference framework. Use when working in this repo on architecture, implementation, benchmarking, scheduling, continuous batching, KV cache management, paged attention, GPU kernels, research evaluation, ablation studies, or comparisons against vLLM.
+description: Guide tiny-vllm development as a learning-oriented modern LLM inference framework. Use when working in this repo on architecture, implementation, benchmarking, scheduling, continuous batching, KV cache management, paged attention, GPU kernels, GPU development/debug setup on gpu1.sutroplanet.com, research evaluation, ablation studies, comparisons against vLLM, PR single-commit hygiene, or addressing Gemini/GitHub PR review feedback.
 ---
 
 # Tiny vLLM
@@ -20,6 +20,54 @@ Prefer one clear implementation path. Avoid permanent configuration toggles, com
 - Assume one autoregressive model family at first. Use Gemma 4 30B as the default exemplar from the project brief unless the repo or available model artifacts establish a different target.
 - Specialize for one GPU architecture when that simplifies kernels, memory layout, or scheduling. Do not generalize early for portability.
 - Favor readable structure and explicit data flow over clever abstractions. Add abstraction only when it reduces real repeated complexity.
+
+## GPU Development Environment
+
+Use `gpu1.sutroplanet.com` as the canonical remote smoke-test and debugging host. Treat the local repo and GitHub branch as the source of truth; use the remote checkout to reproduce, profile, and debug GPU behavior.
+
+First probe the host and record the result in any benchmark or debug report:
+
+```bash
+ssh gpu1.sutroplanet.com 'hostname; nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader; python3 --version'
+```
+
+Default setup on `gpu1`:
+
+```bash
+ssh gpu1.sutroplanet.com '
+set -e
+mkdir -p ~/workspace
+if [ -d ~/workspace/tiny-vllm/.git ]; then
+  cd ~/workspace/tiny-vllm
+  git fetch origin
+else
+  git clone git@github.com:sutro-planet/tiny-vllm.git ~/workspace/tiny-vllm
+  cd ~/workspace/tiny-vllm
+fi
+git checkout <branch>
+git pull --ff-only
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -e ".[dev]"
+python -m pytest tests -q
+python -m ruff check .
+python -m mypy src tests
+PYTHONPATH=src python scripts/smoke.py
+'
+```
+
+Prefer commit-and-push, then `git pull --ff-only` on `gpu1`, for reproducible work. Use `rsync` only for short-lived uncommitted debugging, and never report benchmark numbers from an rsynced dirty tree without saying so.
+
+For future Torch/vLLM GPU work, check Python compatibility before installing heavy dependencies. The host may expose a newer system Python than PyTorch or vLLM supports; if so, use a project-local Python 3.11/3.12 environment or a CUDA/PyTorch container rather than forcing packages into the scaffold venv.
+
+Remote debug loop:
+
+- Run local CPU tests first; use `gpu1` for CUDA behavior, memory pressure, kernel timing, and vLLM comparisons.
+- Use `CUDA_VISIBLE_DEVICES=0` to keep runs single-GPU.
+- For correctness bugs, rerun with `CUDA_LAUNCH_BLOCKING=1` and the smallest failing test or script.
+- For memory/debug reports, capture `nvidia-smi`, git commit, command, model, precision, prompt/decode shape, and relevant logs.
+- For performance changes, collect a vanilla vLLM baseline and a tiny-vLLM run on the same remote checkout and GPU.
 
 ## Research And Design Workflow
 
@@ -45,6 +93,16 @@ Choose benchmark workloads that expose the behavior being changed:
 - Correctness-sensitive work: compare generated tokens, logits where practical, cache layout invariants, and request completion behavior.
 
 Report enough context for a future agent to reproduce the result: git state if available, host, GPU, model, precision, workload, baseline command, tiny-vllm command, and key metrics.
+
+## PR Review Discipline
+
+When a branch has an open PR, proactively inspect GitHub PR comments and review threads before finalizing, especially comments from Gemini Code Assist. Treat unresolved actionable Gemini feedback as part of the active task even if the user did not explicitly ask for each comment.
+
+Evaluate each suggestion technically before changing code. Implement comments that are correct for this codebase, add or update focused tests for behavior changes, and push a follow-up commit to the PR. If a Gemini suggestion is wrong, stale, ambiguous, or conflicts with the project scope, call that out with concise technical reasoning instead of applying it blindly.
+
+Do not mark GitHub threads resolved or reply in the PR unless the user explicitly asks for that write action. Local code changes and pushed commits are the default response.
+
+Keep each PR to a single commit on top of the target branch. During review, amend or squash local changes into that commit instead of stacking fixup commits. Before rewriting a published PR branch, fetch the remote, verify the expected upstream branch, and push with `git push --force-with-lease`, not plain `--force`. If the branch contains commits by another author or unexpected remote changes, stop and ask before rewriting history.
 
 ## Implementation Biases
 
