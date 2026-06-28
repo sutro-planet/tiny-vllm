@@ -73,6 +73,8 @@ Remote debug loop:
 
 For performance-sensitive work, first check current research and production practice. Search papers, vLLM, SGLang, TensorRT-LLM, FlashInfer, CUDA kernels, and relevant vendor/library docs when the topic could have moved recently.
 
+Use `docs/vllm-gap-map.md` as the living comparison map between tiny-vLLM and vLLM. When researching a vLLM subsystem, read that document first, update the relevant node with findings and source pointers, and keep implementation candidates separate from deferred or not-now ideas.
+
 Before implementing a new optimization, pitch the idea briefly:
 
 - Explain the mechanism and why it may improve latency, throughput, memory efficiency, or implementation clarity.
@@ -98,9 +100,13 @@ Report enough context for a future agent to reproduce the result: git state if a
 
 When a branch has an open PR, proactively inspect GitHub PR comments and review threads before finalizing, especially comments from Gemini Code Assist. Treat unresolved actionable Gemini feedback as part of the active task even if the user did not explicitly ask for each comment.
 
+Gemini comments often appear a few minutes after a PR is opened or updated. After creating or pushing to a PR, run an immediate thread-aware check, then monitor again after a short delay before concluding that Gemini has no feedback.
+
 Evaluate each suggestion technically before changing code. Implement comments that are correct for this codebase, add or update focused tests for behavior changes, and push a follow-up commit to the PR. If a Gemini suggestion is wrong, stale, ambiguous, or conflicts with the project scope, call that out with concise technical reasoning instead of applying it blindly.
 
 Do not mark GitHub threads resolved or reply in the PR unless the user explicitly asks for that write action. Local code changes and pushed commits are the default response.
+
+Always open PRs against `main`. Do not create stacked PRs whose base is another feature branch; if work depends on unmerged feature-branch changes, first consolidate those changes onto a new single-commit branch from `main` or get the prerequisite branch merged to `main`. Before opening any PR, verify the base branch is `main`, for example with `gh pr create --base main ...`.
 
 Keep each PR to a single commit on top of the target branch. During review, amend or squash local changes into that commit instead of stacking fixup commits. Before rewriting a published PR branch, fetch the remote, verify the expected upstream branch, and push with `git push --force-with-lease`, not plain `--force`. If the branch contains commits by another author or unexpected remote changes, stop and ask before rewriting history.
 

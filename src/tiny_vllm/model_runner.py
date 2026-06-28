@@ -1,23 +1,56 @@
+from dataclasses import dataclass
 from importlib import import_module
 from typing import Any, Protocol, cast
 
-from tiny_vllm.request import GenerationOutput, GenerationRequest
+from tiny_vllm.sequence import SequencePhase, SequenceState
 from tiny_vllm.tokenizer import Tokenizer, TokenizerBackend
 
 
+@dataclass
+class ExecutionBatch:
+    sequences: list[SequenceState]
+    num_scheduled_tokens: list[int]
+
+    def __post_init__(self) -> None:
+        if len(self.sequences) != len(self.num_scheduled_tokens):
+            raise ValueError(
+                "execution batch must provide one scheduled-token count per sequence"
+            )
+
+    @property
+    def request_ids(self) -> list[str]:
+        return [sequence.request_id for sequence in self.sequences]
+
+
+@dataclass
+class ModelRunnerOutput:
+    sampled_token_ids: list[int]
+
+
 class ModelRunner(Protocol):
-    def generate(self, request: GenerationRequest, max_new_tokens: int) -> GenerationOutput: ...
+    def encode_prompt(self, prompt: str) -> list[int]: ...
+
+    def execute(self, batch: ExecutionBatch) -> ModelRunnerOutput: ...
+
+    def detokenize(self, token_ids: list[int]) -> str: ...
 
 
 class MockModelRunner:
-    def generate(self, request: GenerationRequest, max_new_tokens: int) -> GenerationOutput:
-        generated = [f"<mock-{index}>" for index in range(max_new_tokens)]
-        text = " ".join([request.prompt, *generated]) if request.prompt else " ".join(generated)
-        return GenerationOutput(
-            request_id=request.request_id,
-            text=text,
-            generated_tokens=max_new_tokens,
+    def encode_prompt(self, prompt: str) -> list[int]:
+        return list(range(max(1, len(prompt.split()))))
+
+    def execute(self, batch: ExecutionBatch) -> ModelRunnerOutput:
+        return ModelRunnerOutput(
+            sampled_token_ids=[
+                0
+                if sequence.phase is SequencePhase.WAITING_PREFILL
+                else len(sequence.generated_token_ids)
+                for sequence in batch.sequences
+            ]
         )
+
+    def detokenize(self, token_ids: list[int]) -> str:
+        return " ".join(f"<mock-{token_id}>" for token_id in token_ids)
 
 
 class TransformersModelRunner:
@@ -36,6 +69,20 @@ class TransformersModelRunner:
         eval_fn = getattr(self.model, "eval", None)
         if callable(eval_fn):
             eval_fn()
+
+    def encode_prompt(self, prompt: str) -> list[int]:
+        return self.tokenizer.encode(prompt)
+
+    def execute(self, batch: ExecutionBatch) -> ModelRunnerOutput:
+        return ModelRunnerOutput(
+            sampled_token_ids=[
+                self._generate_one(self._context_token_ids(sequence))
+                for sequence in batch.sequences
+            ]
+        )
+
+    def detokenize(self, token_ids: list[int]) -> str:
+        return self.tokenizer.decode(token_ids)
 
     @classmethod
     def from_pretrained(
@@ -76,13 +123,12 @@ class TransformersModelRunner:
             use_torch_inputs=True,
         )
 
-    def generate(self, request: GenerationRequest, max_new_tokens: int) -> GenerationOutput:
-        input_token_ids = self.tokenizer.encode(request.prompt)
-        input_ids = self._model_input_ids(input_token_ids)
+    def _generate_one(self, token_ids: list[int]) -> int:
+        input_ids = self._model_input_ids(token_ids)
         generation_kwargs: dict[str, Any] = {
             "input_ids": input_ids,
-            "attention_mask": self._attention_mask(input_token_ids, input_ids),
-            "max_new_tokens": max_new_tokens,
+            "attention_mask": self._attention_mask(token_ids, input_ids),
+            "max_new_tokens": 1,
             "do_sample": False,
         }
         if self.tokenizer.eos_token_id is not None:
@@ -90,13 +136,13 @@ class TransformersModelRunner:
 
         output_ids = self.model.generate(**generation_kwargs)
         output_token_ids = self._to_token_ids(output_ids)
-        new_token_ids = output_token_ids[len(input_token_ids) :]
+        return output_token_ids[-1]
 
-        return GenerationOutput(
-            request_id=request.request_id,
-            text=self.tokenizer.decode(new_token_ids),
-            generated_tokens=len(new_token_ids),
-        )
+    @staticmethod
+    def _context_token_ids(sequence: SequenceState) -> list[int]:
+        if sequence.phase is SequencePhase.WAITING_PREFILL:
+            return sequence.prompt_token_ids
+        return sequence.all_token_ids
 
     def _model_input_ids(self, input_token_ids: list[int]) -> Any:
         if not self.use_torch_inputs:
