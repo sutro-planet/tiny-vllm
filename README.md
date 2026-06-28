@@ -19,13 +19,22 @@ python3 -m pytest
 python3 scripts/smoke.py
 ```
 
+Optional real-model smoke path:
+
+```bash
+python3 -m pip install -e ".[dev,transformers]"
+python3 scripts/run_tiny_model.py --model sshleifer/tiny-gpt2 --prompt "Hello" --max-new-tokens 4
+python3 scripts/run_tiny_model.py --model gpt2 --prompt "Hello" --max-new-tokens 4 --no-safetensors
+```
+
 ## Layout
 
 - `src/tiny_vllm/config.py`: engine configuration and validation.
+- `src/tiny_vllm/tokenizer.py`: tokenizer wrapper boundary.
 - `src/tiny_vllm/request.py`: request and output data objects.
 - `src/tiny_vllm/scheduler.py`: FIFO request batching.
 - `src/tiny_vllm/kv_cache.py`: deterministic KV block allocation.
-- `src/tiny_vllm/model_runner.py`: mock generation boundary.
+- `src/tiny_vllm/model_runner.py`: mock and optional Transformers generation boundaries.
 - `src/tiny_vllm/engine.py`: request lifecycle orchestration.
 - `tests/`: CPU-only behavior tests.
 - `benchmarks/`: placeholder benchmark entry points.
