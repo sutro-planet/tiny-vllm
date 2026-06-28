@@ -2,13 +2,16 @@
 
 `tiny-vllm` is a learning-oriented LLM inference framework. The goal is to build the important pieces directly and keep the code easy to inspect: request lifecycle, scheduling, prefill/decode boundaries, KV cache management, observability, benchmarking, and correctness checks.
 
-The initial scaffold is CPU-only and deterministic. It uses a mock model runner so the request, scheduler, and KV cache boundaries can stabilize before GPU kernels or real model loading are added.
+The current scaffold is CPU-only and deterministic by default. It tracks prefill and decode as per-request state, then executes one mixed scheduled-token batch per engine step so request state, scheduling, and KV cache ownership can stabilize before GPU kernels or paged attention are added.
 
 ## Current Scope
 
 - Single-node, single-GPU target over time.
 - One clear implementation path; avoid permanent compatibility layers.
 - Deterministic smoke tests before GPU work.
+- Engine steps bundle active decode rows and newly admitted prefill rows into one runner `ExecutionBatch`.
+- Per-request phase and scheduled-token metadata distinguish decode from prefill inside that batch.
+- The first Transformers path may replay full context internally; efficient `past_key_values`, KV page tables, and paged attention remain future work.
 - Benchmarks should compare against vanilla vLLM when real model execution exists.
 
 ## Exploration State
@@ -38,9 +41,10 @@ python3 scripts/run_tiny_model.py --model gpt2 --prompt "Hello" --max-new-tokens
 - `src/tiny_vllm/config.py`: engine configuration and validation.
 - `src/tiny_vllm/tokenizer.py`: tokenizer wrapper boundary.
 - `src/tiny_vllm/request.py`: request and output data objects.
+- `src/tiny_vllm/sequence.py`: active sequence lifecycle and token accounting.
 - `src/tiny_vllm/scheduler.py`: FIFO request batching.
 - `src/tiny_vllm/kv_cache.py`: deterministic KV block allocation.
-- `src/tiny_vllm/model_runner.py`: mock and optional Transformers generation boundaries.
+- `src/tiny_vllm/model_runner.py`: mock and optional Transformers execution-batch boundary.
 - `src/tiny_vllm/engine.py`: request lifecycle orchestration.
 - `tests/`: CPU-only behavior tests.
 - `benchmarks/`: placeholder benchmark entry points.
