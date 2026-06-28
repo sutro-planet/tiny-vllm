@@ -76,18 +76,18 @@ Update rule:
 
 - **Scheduling and continuous batching** `[explored]`
   - Request queues and fairness
-  - Prefill/decode request state inside a unified execution step
+  - Token-progress request state inside a unified execution step
   - Batch formation
   - Failure and backpressure behavior
   - **Unified scheduled-token execution** `[explored]`
     - vLLM schedules requests by per-request `num_scheduled_tokens`, not by calling separate public prefill and decode runner methods.
     - tiny-vLLM now mirrors that shape with one `ExecutionBatch` per engine step.
-    - Batch ordering is decode rows first, then newly admitted prefill rows, matching vLLM attention-backend split assumptions.
-    - Per-request `SequencePhase` and scheduled-token counts distinguish decode from prefill inside the mixed batch.
-    - Current Transformers implementation may replay full context internally per sequence; real batched tensors, KV reuse, and attention metadata are follow-ups.
+    - Scheduling runs active sequences first, then preempted/waiting sequences and newly admitted requests, mirroring vLLM's running-then-waiting queue shape.
+    - Per-request `num_computed_tokens` and `num_scheduled_tokens` define the token-position range for the step; prompt chunks only sample when that range reaches the request's current end.
+    - Current Transformers implementation uses one padded forward call for the mixed batch, but rows still replay the prefix through the scheduled range internally. Real KV reuse and attention metadata are follow-ups.
   - **Continuous batching scaffold** `[candidate]`
     - The engine keeps queued requests and active sequences separate.
-    - Finished sequences release their KV reservation, allowing later steps to admit queued requests into freed slots.
+    - Finished sequences release their KV blocks, allowing later steps to admit queued requests into freed slots.
     - Backpressure is still capacity-driven and FIFO; fairness and latency policy are deferred.
 
 - **KV cache and block management** `[candidate]`
@@ -96,8 +96,9 @@ Update rule:
   - Eviction and fragmentation
   - Swap/offload policy
   - **Current KV behavior** `[candidate]`
-    - KV blocks are reserved for each sequence token budget and released on completion.
-    - Append-only block growth, cache handles, page tables, and eviction are deferred.
+    - KV blocks grow by scheduled-token demand: prompt/recompute chunks may reserve multiple slots, while normal decode usually reserves one additional computed slot per step.
+    - The allocator only appends whole blocks when a request crosses a block boundary, then releases all owned blocks on completion.
+    - Real KV tensor storage, cache handles, page tables, and eviction are deferred.
 
 - **Paged attention and GPU kernels** `[unexplored]`
   - Page table layout

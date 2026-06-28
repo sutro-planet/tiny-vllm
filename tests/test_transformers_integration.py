@@ -1,17 +1,16 @@
 import os
-
-import pytest
+from unittest import SkipTest
 
 from tiny_vllm.model_runner import ExecutionBatch, TransformersModelRunner
 from tiny_vllm.sequence import SequenceState
 
 
-@pytest.mark.skipif(
-    not os.environ.get("TINY_VLLM_INTEGRATION_MODEL"),
-    reason="set TINY_VLLM_INTEGRATION_MODEL to run a real transformers smoke test",
-)
 def test_transformers_model_runner_real_model_smoke() -> None:
-    runner = TransformersModelRunner.from_pretrained(os.environ["TINY_VLLM_INTEGRATION_MODEL"])
+    model_name = os.environ.get("TINY_VLLM_INTEGRATION_MODEL")
+    if not model_name:
+        raise SkipTest("set TINY_VLLM_INTEGRATION_MODEL to run a real transformers smoke test")
+
+    runner = TransformersModelRunner.from_pretrained(model_name)
     sequence = SequenceState(
         request_id="integration",
         prompt="Hello",
@@ -25,7 +24,8 @@ def test_transformers_model_runner_real_model_smoke() -> None:
             num_scheduled_tokens=[len(sequence.prompt_token_ids)],
         )
     ).sampled_token_ids[0]
-    sequence.append_prefill_token(token_id)
+    sequence.advance_computed_tokens(len(sequence.prompt_token_ids))
+    sequence.append_sampled_token(token_id)
     text = runner.detokenize(sequence.generated_token_ids)
 
     assert sequence.request_id == "integration"

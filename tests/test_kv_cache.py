@@ -39,3 +39,28 @@ def test_allocator_reuses_still_free_blocks_before_released_blocks() -> None:
     allocator.release("req-a")
 
     assert [block.index for block in allocator.allocate("req-c", num_tokens=1)] == [3]
+
+
+def test_allocator_extends_existing_request_only_at_block_boundaries() -> None:
+    allocator = KVBlockAllocator(num_blocks=3, block_size=4)
+
+    assert [block.index for block in allocator.ensure_slots("req-a", num_tokens=1)] == [0]
+    assert allocator.ensure_slots("req-a", num_tokens=4) == []
+    assert allocator.available_blocks == 2
+
+    assert [block.index for block in allocator.ensure_slots("req-a", num_tokens=5)] == [1]
+    assert allocator.ensure_slots("req-a", num_tokens=8) == []
+    assert allocator.available_blocks == 1
+
+
+def test_allocator_reports_capacity_when_extension_would_cross_exhausted_boundary() -> None:
+    allocator = KVBlockAllocator(num_blocks=1, block_size=4)
+
+    allocator.ensure_slots("req-a", num_tokens=4)
+
+    try:
+        allocator.ensure_slots("req-a", num_tokens=5)
+    except RuntimeError as exc:
+        assert "KV cache capacity" in str(exc)
+    else:
+        raise AssertionError("expected extension to fail")
