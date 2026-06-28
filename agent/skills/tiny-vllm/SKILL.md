@@ -73,6 +73,8 @@ Remote debug loop:
 
 For performance-sensitive work, first check current research and production practice. Search papers, vLLM, SGLang, TensorRT-LLM, FlashInfer, CUDA kernels, and relevant vendor/library docs when the topic could have moved recently.
 
+Use `docs/vllm-gap-map.md` as the living comparison map between tiny-vLLM and vLLM. When researching a vLLM subsystem, read that document first, update the relevant node with findings and source pointers, and keep implementation candidates separate from deferred or not-now ideas.
+
 Before implementing a new optimization, pitch the idea briefly:
 
 - Explain the mechanism and why it may improve latency, throughput, memory efficiency, or implementation clarity.
@@ -97,6 +99,8 @@ Report enough context for a future agent to reproduce the result: git state if a
 ## PR Review Discipline
 
 When a branch has an open PR, proactively inspect GitHub PR comments and review threads before finalizing, especially comments from Gemini Code Assist. Treat unresolved actionable Gemini feedback as part of the active task even if the user did not explicitly ask for each comment.
+
+Gemini comments often appear a few minutes after a PR is opened or updated. After creating or pushing to a PR, run an immediate thread-aware check, then monitor again after a short delay before concluding that Gemini has no feedback.
 
 Evaluate each suggestion technically before changing code. Implement comments that are correct for this codebase, add or update focused tests for behavior changes, and push a follow-up commit to the PR. If a Gemini suggestion is wrong, stale, ambiguous, or conflicts with the project scope, call that out with concise technical reasoning instead of applying it blindly.
 
