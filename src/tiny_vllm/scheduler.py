@@ -32,6 +32,11 @@ class Scheduler:
             batch.append(self._queue.popleft())
         return batch
 
+    def pop_next(self) -> GenerationRequest | None:
+        if not self._queue:
+            return None
+        return self._queue.popleft()
+
     def requeue_front(self, requests: Iterable[GenerationRequest]) -> None:
         for request in reversed(list(requests)):
             self._queue.appendleft(request)

@@ -4,8 +4,8 @@ from types import SimpleNamespace
 from typing import Any
 
 import tiny_vllm.model_runner as model_runner_module
-from tiny_vllm.model_runner import TransformersModelRunner
-from tiny_vllm.request import GenerationRequest
+from tiny_vllm.model_runner import ExecutionBatch, MockModelRunner, TransformersModelRunner
+from tiny_vllm.sequence import SequenceState
 from tiny_vllm.tokenizer import Tokenizer
 
 
@@ -52,41 +52,85 @@ class FakeModel:
         return FakeTensor([self.output_ids])
 
 
-def test_transformers_runner_generates_and_decodes_only_new_tokens() -> None:
-    hf_tokenizer = FakeHFTokenizer()
-    model = FakeModel(output_ids=[5, 4, 11, 12])
-    runner = TransformersModelRunner(model=model, tokenizer=Tokenizer(hf_tokenizer))
-
-    output = runner.generate(
-        GenerationRequest(request_id="req-a", prompt="hello tiny", max_new_tokens=2),
+def test_mock_runner_execute_returns_one_token_per_scheduled_sequence() -> None:
+    runner = MockModelRunner()
+    first = SequenceState(
+        request_id="req-a",
+        prompt="alpha",
+        prompt_token_ids=runner.encode_prompt("alpha"),
         max_new_tokens=2,
     )
+    second = SequenceState(
+        request_id="req-b",
+        prompt="beta gamma",
+        prompt_token_ids=runner.encode_prompt("beta gamma"),
+        max_new_tokens=1,
+    )
 
-    assert model.eval_called is True
-    assert model.generate_kwargs == {
-        "input_ids": [[5, 4]],
-        "attention_mask": [[1, 1]],
-        "max_new_tokens": 2,
-        "do_sample": False,
-        "pad_token_id": 99,
-    }
-    assert output.request_id == "req-a"
-    assert output.generated_tokens == 2
-    assert output.text == "tok-11 tok-12"
+    prefill_output = runner.execute(
+        ExecutionBatch(
+            sequences=[first, second],
+            num_scheduled_tokens=[len(first.prompt_token_ids), len(second.prompt_token_ids)],
+        )
+    )
+
+    assert prefill_output.sampled_token_ids == [0, 0]
+
+    first.append_prefill_token(0)
+    second.append_prefill_token(0)
+
+    decode_output = runner.execute(
+        ExecutionBatch(sequences=[first], num_scheduled_tokens=[1])
+    )
+
+    assert decode_output.sampled_token_ids == [1]
+    assert runner.detokenize([0, 1]) == "<mock-0> <mock-1>"
 
 
-def test_transformers_runner_does_not_decode_prompt_tokens_when_generation_stops_early() -> None:
+def test_transformers_runner_execute_prefill_returns_first_generated_token() -> None:
     hf_tokenizer = FakeHFTokenizer()
     model = FakeModel(output_ids=[5, 4, 11])
     runner = TransformersModelRunner(model=model, tokenizer=Tokenizer(hf_tokenizer))
-
-    output = runner.generate(
-        GenerationRequest(request_id="req-a", prompt="hello tiny", max_new_tokens=2),
+    sequence = SequenceState(
+        request_id="req-a",
+        prompt="hello tiny",
+        prompt_token_ids=[5, 4],
         max_new_tokens=2,
     )
 
-    assert output.generated_tokens == 1
-    assert output.text == "tok-11"
+    output = runner.execute(
+        ExecutionBatch(
+            sequences=[sequence],
+            num_scheduled_tokens=[len(sequence.prompt_token_ids)],
+        )
+    )
+
+    assert output.sampled_token_ids == [11]
+    assert model.generate_kwargs == {
+        "input_ids": [[5, 4]],
+        "attention_mask": [[1, 1]],
+        "max_new_tokens": 1,
+        "do_sample": False,
+        "pad_token_id": 99,
+    }
+
+
+def test_transformers_runner_execute_decode_returns_next_generated_token() -> None:
+    hf_tokenizer = FakeHFTokenizer()
+    model = FakeModel(output_ids=[5, 4, 11, 12])
+    runner = TransformersModelRunner(model=model, tokenizer=Tokenizer(hf_tokenizer))
+    sequence = SequenceState(
+        request_id="req-a",
+        prompt="hello tiny",
+        prompt_token_ids=[5, 4],
+        max_new_tokens=2,
+    )
+    sequence.append_prefill_token(11)
+
+    output = runner.execute(ExecutionBatch(sequences=[sequence], num_scheduled_tokens=[1]))
+
+    assert output.sampled_token_ids == [12]
+    assert runner.detokenize([11, 12]) == "tok-11 tok-12"
 
 
 def test_transformers_runner_from_pretrained_forwards_safetensors_option(
