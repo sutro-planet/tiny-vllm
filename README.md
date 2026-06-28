@@ -11,6 +11,12 @@ The initial scaffold is CPU-only and deterministic. It uses a mock model runner 
 - Deterministic smoke tests before GPU work.
 - Benchmarks should compare against vanilla vLLM when real model execution exists.
 
+## Exploration State
+
+Use `docs/vllm-gap-map.md` as the living exploration state map for tiny-vLLM versus vLLM. When researching a vLLM subsystem, update the closest node with observed vLLM behavior, tiny-vLLM implications, source pointers, and whether the idea is explored, candidate, deferred, not-now, or still unexplored.
+
+Future Codex agents should also read `agent/skills/tiny-vllm/SKILL.md` before development work in this repo. The skill captures the project workflow: keep the implementation learning-oriented, use the gap map during research, compare against vanilla vLLM when practical, use `gpu1.sutroplanet.com` for GPU smoke/debug loops, keep PRs to a single commit, and proactively monitor Gemini/GitHub PR feedback.
+
 ## Quick Start
 
 ```bash
@@ -39,3 +45,5 @@ python3 scripts/run_tiny_model.py --model gpt2 --prompt "Hello" --max-new-tokens
 - `tests/`: CPU-only behavior tests.
 - `benchmarks/`: placeholder benchmark entry points.
 - `scripts/`: local smoke-test commands.
+- `docs/vllm-gap-map.md`: living vLLM gap and exploration state map.
+- `agent/skills/tiny-vllm/SKILL.md`: repo-specific Codex workflow and PR discipline.
