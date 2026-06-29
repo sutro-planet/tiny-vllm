@@ -1,10 +1,13 @@
 import argparse
 
-from tiny_vllm import Engine, EngineConfig, GenerationRequest, TransformersModelRunner
+from tiny_vllm import Engine, EngineConfig, GenerationRequest
+from tiny_vllm.torch_gpt2 import TorchGPT2ModelRunner
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run a real causal LM through tiny-vLLM.")
+    parser = argparse.ArgumentParser(
+        description="Run a GPT-2 causal LM through tiny-vLLM's Torch forward path."
+    )
     parser.add_argument("--model", required=True, help="Hugging Face model name or local path.")
     parser.add_argument("--prompt", default="Hello", help="Prompt text.")
     parser.add_argument("--request-id", default="smoke-real", help="Request id.")
@@ -36,7 +39,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    runner = TransformersModelRunner.from_pretrained(
+    runner = TorchGPT2ModelRunner.from_pretrained(
         args.model,
         device=args.device,
         torch_dtype=args.torch_dtype,
