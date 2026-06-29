@@ -6,6 +6,7 @@ def test_engine_config_has_small_deterministic_defaults() -> None:
 
     assert config.model_name == "mock-gemma"
     assert config.max_batch_size == 4
+    assert config.max_num_scheduled_tokens == 16
     assert config.max_num_blocks == 16
     assert config.block_size == 16
     assert config.max_new_tokens == 8

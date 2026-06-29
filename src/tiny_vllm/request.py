@@ -19,3 +19,4 @@ class GenerationOutput:
     request_id: str
     text: str
     generated_tokens: int
+    error: str | None = None

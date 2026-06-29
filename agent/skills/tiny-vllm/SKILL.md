@@ -25,6 +25,8 @@ Prefer one clear implementation path. Avoid permanent configuration toggles, com
 
 Use `gpu1.sutroplanet.com` as the canonical remote smoke-test and debugging host. Treat the local repo and GitHub branch as the source of truth; use the remote checkout to reproduce, profile, and debug GPU behavior.
 
+Prefer the repo-owned VS Code tasks for routine GPU smoke checks instead of manual SSH. Use `Tiny vLLM: GPU Smoke Current Branch` for reproducible PR validation after committing and pushing; use `Tiny vLLM: GPU Smoke Dirty Workspace` only for short-lived scratch debugging. The tasks call `scripts/dev/gpu_smoke.sh`, which also supports `gpt2` variants for model smoke testing.
+
 First probe the host and record the result in any benchmark or debug report:
 
 ```bash

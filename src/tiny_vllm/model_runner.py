@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from typing import Any, Protocol, cast
 
-from tiny_vllm.sequence import SequencePhase, SequenceState
+from tiny_vllm.sequence import SequenceState
 from tiny_vllm.tokenizer import Tokenizer, TokenizerBackend
 
 
@@ -42,9 +42,7 @@ class MockModelRunner:
     def execute(self, batch: ExecutionBatch) -> ModelRunnerOutput:
         return ModelRunnerOutput(
             sampled_token_ids=[
-                0
-                if sequence.phase is SequencePhase.WAITING_PREFILL
-                else len(sequence.generated_token_ids)
+                len(sequence.generated_token_ids)
                 for sequence in batch.sequences
             ]
         )
@@ -66,6 +64,7 @@ class TransformersModelRunner:
         self.tokenizer = tokenizer
         self.device = device
         self.use_torch_inputs = use_torch_inputs
+        self._torch: Any | None = None
         eval_fn = getattr(self.model, "eval", None)
         if callable(eval_fn):
             eval_fn()
@@ -74,10 +73,28 @@ class TransformersModelRunner:
         return self.tokenizer.encode(prompt)
 
     def execute(self, batch: ExecutionBatch) -> ModelRunnerOutput:
+        context_rows = [
+            self._context_token_ids(
+                sequence,
+                num_scheduled_tokens=num_scheduled_tokens,
+            )
+            for sequence, num_scheduled_tokens in zip(
+                batch.sequences, batch.num_scheduled_tokens, strict=True
+            )
+        ]
+        input_rows, attention_rows = self._pad_context_rows(context_rows)
+        input_ids = self._model_input_ids(input_rows)
+        attention_mask = self._model_attention_mask(attention_rows)
+        output = self._forward(input_ids=input_ids, attention_mask=attention_mask)
+        logits = output.logits
         return ModelRunnerOutput(
             sampled_token_ids=[
-                self._generate_one(self._context_token_ids(sequence))
-                for sequence in batch.sequences
+                self._sample_next_token_id(
+                    logits,
+                    row_index=row_index,
+                    token_index=sum(attention_row) - 1,
+                )
+                for row_index, attention_row in enumerate(attention_rows)
             ]
         )
 
@@ -123,55 +140,83 @@ class TransformersModelRunner:
             use_torch_inputs=True,
         )
 
-    def _generate_one(self, token_ids: list[int]) -> int:
-        input_ids = self._model_input_ids(token_ids)
-        generation_kwargs: dict[str, Any] = {
-            "input_ids": input_ids,
-            "attention_mask": self._attention_mask(token_ids, input_ids),
-            "max_new_tokens": 1,
-            "do_sample": False,
-        }
-        if self.tokenizer.eos_token_id is not None:
-            generation_kwargs["pad_token_id"] = self.tokenizer.eos_token_id
-
-        output_ids = self.model.generate(**generation_kwargs)
-        output_token_ids = self._to_token_ids(output_ids)
-        return output_token_ids[-1]
-
     @staticmethod
-    def _context_token_ids(sequence: SequenceState) -> list[int]:
-        if sequence.phase is SequencePhase.WAITING_PREFILL:
-            return sequence.prompt_token_ids
-        return sequence.all_token_ids
+    def _context_token_ids(
+        sequence: SequenceState, *, num_scheduled_tokens: int
+    ) -> list[int]:
+        return sequence.scheduled_context_token_ids(
+            num_scheduled_tokens=num_scheduled_tokens
+        )
 
-    def _model_input_ids(self, input_token_ids: list[int]) -> Any:
+    def _pad_context_rows(
+        self, context_rows: list[list[int]]
+    ) -> tuple[list[list[int]], list[list[int]]]:
+        if not context_rows:
+            return [], []
+        if any(not row for row in context_rows):
+            raise ValueError("cannot execute an empty token context")
+
+        max_length = max(len(row) for row in context_rows)
+        pad_token_id = self.tokenizer.eos_token_id
+        if pad_token_id is None:
+            pad_token_id = 0
+
+        input_rows: list[list[int]] = []
+        attention_rows: list[list[int]] = []
+        for row in context_rows:
+            padding = max_length - len(row)
+            input_rows.append([*row, *([pad_token_id] * padding)])
+            attention_rows.append([*([1] * len(row)), *([0] * padding)])
+        return input_rows, attention_rows
+
+    def _model_input_ids(self, input_rows: list[list[int]]) -> Any:
         if not self.use_torch_inputs:
-            return [input_token_ids]
+            return input_rows
+
+        return self._get_torch().tensor(input_rows, device=self.device)
+
+    def _model_attention_mask(self, attention_rows: list[list[int]]) -> Any:
+        if not self.use_torch_inputs:
+            return attention_rows
+
+        return self._get_torch().tensor(attention_rows, device=self.device)
+
+    def _forward(self, *, input_ids: Any, attention_mask: Any) -> Any:
+        if not self.use_torch_inputs:
+            return self.model(input_ids=input_ids, attention_mask=attention_mask)
+
+        with self._get_torch().no_grad():
+            return self.model(input_ids=input_ids, attention_mask=attention_mask)
+
+    def _get_torch(self) -> Any:
+        if self._torch is not None:
+            return self._torch
 
         try:
-            torch = import_module("torch")
+            self._torch = import_module("torch")
         except ImportError as exc:
             raise RuntimeError("Install torch to run a transformers model") from exc
-
-        return torch.tensor([input_token_ids], device=self.device)
-
-    def _attention_mask(self, input_token_ids: list[int], input_ids: Any) -> Any:
-        if not self.use_torch_inputs:
-            return [[1] * len(input_token_ids)]
-
-        try:
-            torch = import_module("torch")
-        except ImportError as exc:
-            raise RuntimeError("Install torch to run a transformers model") from exc
-
-        return torch.ones_like(input_ids)
+        return self._torch
 
     @staticmethod
-    def _to_token_ids(output_ids: Any) -> list[int]:
-        tolist_fn = getattr(output_ids, "tolist", None)
-        if callable(tolist_fn):
-            rows = cast(list[list[int]], tolist_fn())
-            return rows[0]
+    def _sample_next_token_id(
+        logits: Any,
+        *,
+        row_index: int,
+        token_index: int,
+    ) -> int:
+        try:
+            token_logits = logits[row_index, token_index]
+        except TypeError:
+            token_logits = logits[row_index][token_index]
 
-        rows = cast(list[list[int]], output_ids)
-        return rows[0]
+        argmax_fn = getattr(token_logits, "argmax", None)
+        if callable(argmax_fn):
+            token_id = argmax_fn(dim=-1)
+            item_fn = getattr(token_id, "item", None)
+            if callable(item_fn):
+                return int(item_fn())
+            return int(token_id)
+
+        scores = cast(list[float], token_logits)
+        return max(range(len(scores)), key=scores.__getitem__)

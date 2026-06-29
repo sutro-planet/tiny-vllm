@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Tiny vLLM: GPU Smoke Current Branch",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/dev/gpu_smoke.sh",
+      "args": ["--mode", "branch", "--target", "smoke"],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Tiny vLLM: GPU Smoke Current Branch gpt2",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/dev/gpu_smoke.sh",
+      "args": ["--mode", "branch", "--target", "gpt2"],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Tiny vLLM: GPU Smoke Dirty Workspace",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/dev/gpu_smoke.sh",
+      "args": ["--mode", "dirty", "--target", "smoke"],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Tiny vLLM: GPU Smoke Dirty Workspace gpt2",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/dev/gpu_smoke.sh",
+      "args": ["--mode", "dirty", "--target", "gpt2"],
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

@@ -2,15 +2,16 @@
 
 `tiny-vllm` is a learning-oriented LLM inference framework. The goal is to build the important pieces directly and keep the code easy to inspect: request lifecycle, scheduling, prefill/decode boundaries, KV cache management, observability, benchmarking, and correctness checks.
 
-The current scaffold is CPU-only and deterministic by default. It tracks prefill and decode as per-request state, then executes one mixed scheduled-token batch per engine step so request state, scheduling, and KV cache ownership can stabilize before GPU kernels or paged attention are added.
+The current scaffold is CPU-only and deterministic by default. It tracks each request by token progress (`num_computed_tokens`) and executes one mixed scheduled-token batch per engine step so request state, scheduling, and KV cache ownership can stabilize before GPU kernels or paged attention are added.
 
 ## Current Scope
 
 - Single-node, single-GPU target over time.
 - One clear implementation path; avoid permanent compatibility layers.
 - Deterministic smoke tests before GPU work.
-- Engine steps bundle active decode rows and newly admitted prefill rows into one runner `ExecutionBatch`.
-- Per-request phase and scheduled-token metadata distinguish decode from prefill inside that batch.
+- Engine steps schedule active sequences first, then waiting/preempted work and newly admitted requests into one runner `ExecutionBatch`.
+- Per-request `num_scheduled_tokens` caps the token-position range computed in the step; prompt work may be chunked across multiple steps before sampling.
+- Request-local admission failures, such as empty encoded prompts or impossible KV requirements, return a `GenerationOutput` with `error` set instead of failing unrelated active requests.
 - The first Transformers path may replay full context internally; efficient `past_key_values`, KV page tables, and paged attention remain future work.
 - Benchmarks should compare against vanilla vLLM when real model execution exists.
 
