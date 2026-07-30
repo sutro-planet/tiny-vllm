@@ -44,6 +44,24 @@ class FailingExecuteRunner(RecordingRunner):
         return output
 
 
+class RecordingReleaseRunner(RecordingRunner):
+    def __init__(self) -> None:
+        super().__init__()
+        self.release_calls: list[str] = []
+
+    def release(self, request_id: str) -> None:
+        self.release_calls.append(request_id)
+
+
+class FailingExecuteReleaseRunner(FailingExecuteRunner):
+    def __init__(self, message: str, fail_on_call: int) -> None:
+        super().__init__(message=message, fail_on_call=fail_on_call)
+        self.release_calls: list[str] = []
+
+    def release(self, request_id: str) -> None:
+        self.release_calls.append(request_id)
+
+
 class FailingEncodeRunner(RecordingRunner):
     def encode_prompt(self, prompt: str) -> list[int]:
         raise RuntimeError("encode failed")
@@ -124,6 +142,20 @@ def test_engine_accepts_injected_model_runner() -> None:
     ]
     assert outputs[0].text == "alpha <recorded-0> <recorded-1>"
     assert engine.stats.completed_requests == 1
+
+
+def test_engine_releases_runner_cache_when_sequence_completes() -> None:
+    runner = RecordingReleaseRunner()
+    engine = Engine(
+        EngineConfig(max_batch_size=1, max_num_blocks=4, block_size=4),
+        model_runner=runner,
+    )
+
+    engine.submit(GenerationRequest(request_id="req-a", prompt="alpha", max_new_tokens=1))
+    outputs = engine.run_step()
+
+    assert [output.request_id for output in outputs] == ["req-a"]
+    assert runner.release_calls == ["req-a"]
 
 
 def test_engine_prefill_can_complete_one_token_request() -> None:
@@ -471,6 +503,23 @@ def test_engine_recomputes_preempted_decode_before_it_runs_again() -> None:
     assert outputs[0].generated_tokens == 3
 
 
+def test_engine_releases_runner_cache_when_sequence_is_preempted() -> None:
+    runner = RecordingReleaseRunner()
+    engine = Engine(
+        EngineConfig(max_batch_size=2, max_num_blocks=2, block_size=2),
+        model_runner=runner,
+    )
+    engine.submit(GenerationRequest(request_id="req-a", prompt="a", max_new_tokens=3))
+    engine.submit(GenerationRequest(request_id="req-b", prompt="b", max_new_tokens=3))
+
+    assert engine.run_step() == []
+    assert engine.run_step() == []
+    outputs = engine.run_step()
+
+    assert [output.request_id for output in outputs] == ["req-a"]
+    assert runner.release_calls == ["req-b", "req-a"]
+
+
 def test_engine_rejects_request_that_can_never_fit_kv_capacity() -> None:
     runner = RecordingRunner()
     engine = Engine(
@@ -608,6 +657,24 @@ def test_engine_releases_decode_sequences_when_runner_fails() -> None:
 
     engine.submit(request)
     assert engine.scheduler.pending_count == 1
+
+
+def test_engine_releases_runner_cache_when_runner_fails() -> None:
+    runner = FailingExecuteReleaseRunner("prefill failed", fail_on_call=1)
+    engine = Engine(
+        EngineConfig(max_batch_size=1, max_num_blocks=4, block_size=4),
+        model_runner=runner,
+    )
+    engine.submit(GenerationRequest(request_id="req-a", prompt="alpha", max_new_tokens=1))
+
+    try:
+        engine.run_step()
+    except RuntimeError as exc:
+        assert "prefill failed" in str(exc)
+    else:
+        raise AssertionError("expected prefill failure")
+
+    assert runner.release_calls == ["req-a"]
 
 
 def test_engine_keeps_prefills_pending_when_decode_slot_allocation_fails() -> None:

@@ -68,11 +68,20 @@ Update rule:
     - vLLM tests cached tokenizer behavior, tokenizer registry behavior, Mistral tokenization, and incremental detokenization edge cases.
     - tiny-VLLM implication: when each feature lands, add focused unit tests with fake tokenizers first, then optional transformers integration tests.
 
-- **Model loading and runner boundary** `[unexplored]`
-  - HF model loading options
-  - Device and dtype handling
-  - Weight formats and quantization
-  - Runner protocol shape
+- **Model loading and runner boundary** `[candidate]`
+  - **Current tiny-vLLM shape**
+    - `TorchGPT2ModelRunner.from_pretrained()` loads GPT-2 tokenizer/config/weights from Hugging Face, then executes with `TinyGPT2LMHeadModel`.
+    - The local Torch GPT-2 implementation includes token/position embeddings, causal self-attention, MLP, final layer norm, tied LM head, and HF-compatible weight names.
+    - `TransformersModelRunner` remains available as an oracle/test boundary; scripts use the Torch runner for GPT-2 smoke.
+    - The runner packs one `ExecutionBatch` into flattened scheduled-token tensors: `input_ids`, `positions`, `req_indices`, and `query_start_loc`.
+    - The runner owns global per-layer dense KV tensors and a `req_to_blocks` table keyed by request ID. HF-style `past_key_values` remain only for model/oracle tests.
+  - **Remaining gaps** `[candidate]`
+    - Only GPT-2-style causal LM checkpoints are supported.
+    - The runner gathers block-backed KV into dense attention rows internally instead of using paged-attention kernels directly.
+    - Weight formats, quantization, model registry, and non-HF loaders are deferred.
+  - **Runner cache lifecycle**
+    - The engine exposes runner cache release through an optional `release(request_id)` hook.
+    - Completion, preemption, and engine failure cleanup release both logical KV blocks and runner-owned block-table entries.
 
 - **Scheduling and continuous batching** `[explored]`
   - Request queues and fairness
@@ -84,7 +93,7 @@ Update rule:
     - tiny-vLLM now mirrors that shape with one `ExecutionBatch` per engine step.
     - Scheduling runs active sequences first, then preempted/waiting sequences and newly admitted requests, mirroring vLLM's running-then-waiting queue shape.
     - Per-request `num_computed_tokens` and `num_scheduled_tokens` define the token-position range for the step; prompt chunks only sample when that range reaches the request's current end.
-    - Current Transformers implementation uses one padded forward call for the mixed batch, but rows still replay the prefix through the scheduled range internally. Real KV reuse and attention metadata are follow-ups.
+    - Current Torch GPT-2 implementation flattens scheduled tokens into one model forward and uses `req_indices`/`query_start_loc`/block tables to preserve request boundaries.
   - **Continuous batching scaffold** `[candidate]`
     - The engine keeps queued requests and active sequences separate.
     - Finished sequences release their KV blocks, allowing later steps to admit queued requests into freed slots.
@@ -98,7 +107,8 @@ Update rule:
   - **Current KV behavior** `[candidate]`
     - KV blocks grow by scheduled-token demand: prompt/recompute chunks may reserve multiple slots, while normal decode usually reserves one additional computed slot per step.
     - The allocator only appends whole blocks when a request crosses a block boundary, then releases all owned blocks on completion.
-    - Real KV tensor storage, cache handles, page tables, and eviction are deferred.
+    - Torch GPT-2 runner stores global per-layer dense KV tensors addressed by a request-to-block table.
+    - Fragmentation-aware physical block management, page-table GPU kernels, cache handles, and eviction are deferred.
 
 - **Paged attention and GPU kernels** `[unexplored]`
   - Page table layout

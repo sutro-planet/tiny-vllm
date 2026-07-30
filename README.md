@@ -12,7 +12,8 @@ The current scaffold is CPU-only and deterministic by default. It tracks each re
 - Engine steps schedule active sequences first, then waiting/preempted work and newly admitted requests into one runner `ExecutionBatch`.
 - Per-request `num_scheduled_tokens` caps the token-position range computed in the step; prompt work may be chunked across multiple steps before sampling.
 - Request-local admission failures, such as empty encoded prompts or impossible KV requirements, return a `GenerationOutput` with `error` set instead of failing unrelated active requests.
-- The first Transformers path may replay full context internally; efficient `past_key_values`, KV page tables, and paged attention remain future work.
+- GPT-2 real-model smoke uses tiny-vLLM's Torch forward path with flattened scheduled-token inputs and block-backed dense KV tensors; Hugging Face is used only for tokenizer/config/weight loading and oracle checks.
+- GPU paged attention, fragmentation-aware physical block management, and non-GPT-2 architectures remain future work.
 - Benchmarks should compare against vanilla vLLM when real model execution exists.
 
 ## Exploration State
@@ -45,7 +46,8 @@ python3 scripts/run_tiny_model.py --model gpt2 --prompt "Hello" --max-new-tokens
 - `src/tiny_vllm/sequence.py`: active sequence lifecycle and token accounting.
 - `src/tiny_vllm/scheduler.py`: FIFO request batching.
 - `src/tiny_vllm/kv_cache.py`: deterministic KV block allocation.
-- `src/tiny_vllm/model_runner.py`: mock and optional Transformers execution-batch boundary.
+- `src/tiny_vllm/model_runner.py`: mock and optional Transformers oracle execution-batch boundary.
+- `src/tiny_vllm/torch_gpt2.py`: tiny Torch GPT-2 forward path and block-backed dense KV runner.
 - `src/tiny_vllm/engine.py`: request lifecycle orchestration.
 - `tests/`: CPU-only behavior tests.
 - `benchmarks/`: placeholder benchmark entry points.

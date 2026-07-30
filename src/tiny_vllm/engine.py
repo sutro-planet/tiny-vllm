@@ -286,6 +286,7 @@ class Engine:
     def _preempt_sequence(self, sequence: SequenceState) -> None:
         self._active_sequences.pop(sequence.request_id, None)
         self.kv_cache.release(sequence.request_id)
+        self._release_runner_cache(sequence.request_id)
         sequence.reset_computed_tokens()
         self._waiting_sequences.appendleft(sequence)
 
@@ -404,6 +405,7 @@ class Engine:
             )
             self.stats.completed_requests += 1
             self.kv_cache.release(sequence.request_id)
+            self._release_runner_cache(sequence.request_id)
             self.scheduler.finish(sequence.request_id)
             del self._active_sequences[sequence.request_id]
 
@@ -427,6 +429,7 @@ class Engine:
                 continue
             released_request_ids.add(sequence.request_id)
             self.kv_cache.release(sequence.request_id)
+            self._release_runner_cache(sequence.request_id)
             self.scheduler.finish(sequence.request_id)
             self._active_sequences.pop(sequence.request_id, None)
 
@@ -441,3 +444,8 @@ class Engine:
         if sequence.prompt and generated_text:
             return f"{sequence.prompt} {generated_text}"
         return generated_text or sequence.prompt
+
+    def _release_runner_cache(self, request_id: str) -> None:
+        release = getattr(self.model_runner, "release", None)
+        if callable(release):
+            release(request_id)
