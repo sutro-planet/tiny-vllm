@@ -18,8 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
-      issues: write
+      pull-requests: write
     outputs:
       sha: ${{ steps.request.outputs.sha }}
       pr: ${{ steps.request.outputs.pr }}
@@ -178,7 +177,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
-      issues: write
+      pull-requests: write
     steps:
       - uses: actions/download-artifact@v4
         continue-on-error: true
