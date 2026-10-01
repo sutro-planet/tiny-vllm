@@ -52,6 +52,9 @@ jobs:
     needs: authorize
     runs-on: sutro-k8s-runner-set
     timeout-minutes: 45
+    env:
+      # The builder is deleted before post hooks; retain digests and build logs.
+      DOCKER_BUILD_SUMMARY: 'false'
     permissions:
       contents: read
       packages: write
@@ -78,7 +81,36 @@ jobs:
           rm -rf candidate/benchmarks/aiperf
           mkdir -p candidate/benchmarks/aiperf
           cp harness/benchmarks/aiperf/*.yaml candidate/benchmarks/aiperf/
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.29.3'
+      - name: Configure namespace-scoped build access
+        env:
+          PROFILE_KUBECONFIG: ${{ secrets.PROFILE_KUBECONFIG }}
+        run: |
+          umask 077
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'build.kubeconfig'
+          path.write_text(os.environ['PROFILE_KUBECONFIG'])
+          PY
+          echo "KUBECONFIG=$RUNNER_TEMP/build.kubeconfig" >> "$GITHUB_ENV"
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver: kubernetes
+          platforms: linux/amd64
+          cleanup: false
+          driver-opts: |
+            namespace=tiny-vllm-profile
+            rootless=true
+            nodeselector=kubernetes.io/hostname=sutro-gpu1
+            labels=profile-build=gh-${{ github.run_id }}
+            requests.cpu=2
+            requests.memory=4Gi
+            limits.cpu=4
+            limits.memory=8Gi
+            limits.ephemeral-storage=40Gi
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -93,8 +125,8 @@ jobs:
           push: true
           tags: ghcr.io/sutro-planet/tiny-vllm/profile-server:pr-${{ needs.authorize.outputs.pr }}-${{ github.run_id }}
           build-args: SOURCE_REVISION=${{ needs.authorize.outputs.sha }}
-          cache-from: type=gha,scope=tiny-cuda
-          cache-to: type=gha,scope=tiny-cuda,mode=max
+          cache-from: type=registry,ref=ghcr.io/sutro-planet/tiny-vllm/profile-server:buildcache
+          cache-to: type=registry,ref=ghcr.io/sutro-planet/tiny-vllm/profile-server:buildcache,mode=max,ignore-error=true
       - uses: docker/build-push-action@v6
         id: client
         with:
@@ -104,8 +136,17 @@ jobs:
           push: true
           tags: ghcr.io/sutro-planet/tiny-vllm/profile-client:run-${{ github.run_id }}
           build-args: SOURCE_REVISION=${{ github.sha }}
-          cache-from: type=gha,scope=aiperf
-          cache-to: type=gha,scope=aiperf,mode=max
+          cache-from: type=registry,ref=ghcr.io/sutro-planet/tiny-vllm/profile-client:buildcache
+          cache-to: type=registry,ref=ghcr.io/sutro-planet/tiny-vllm/profile-client:buildcache,mode=max,ignore-error=true
+      - name: Release owned builder resources
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/build.kubeconfig" ]; then
+            export KUBECONFIG="$RUNNER_TEMP/build.kubeconfig"
+            kubectl delete deployment,pod -n tiny-vllm-profile \
+              -l "profile-build=gh-$GITHUB_RUN_ID" --ignore-not-found --timeout=90s
+            rm "$RUNNER_TEMP/build.kubeconfig"
+          fi
   profile:
     needs: [authorize, build]
     runs-on: sutro-k8s-runner-set
@@ -188,6 +229,7 @@ jobs:
         env:
           PR_NUMBER: ${{ needs.authorize.outputs.pr }}
           SOURCE_SHA: ${{ needs.authorize.outputs.sha }}
+          BUILD_RESULT: ${{ needs.build.result }}
           PROFILE_RESULT: ${{ needs.profile.result }}
         with:
           script: |
@@ -195,7 +237,8 @@ jobs:
             const path = 'profile/report.md';
             const url = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const body = fs.existsSync(path) ? fs.readFileSync(path, 'utf8') :
-              `GPU profiling did not complete (${process.env.PROFILE_RESULT}). ` +
-              `Tested commit: \`${process.env.SOURCE_SHA}\`. Check GPU availability and run logs.`;
+              `GPU profiling did not complete (build: ${process.env.BUILD_RESULT}; ` +
+              `profile: ${process.env.PROFILE_RESULT}). ` +
+              `Tested commit: \`${process.env.SOURCE_SHA}\`. Check the failed job's logs.`;
             await github.rest.issues.createComment({...context.repo,
-              issue_number: Number(process.env.PR_NUMBER), body: body + `\n\n[Logs and raw artifacts](${url})`});
+              issue_number: Number(process.env.PR_NUMBER), body: body + `\n\n[Run logs and available artifacts](${url})`});
