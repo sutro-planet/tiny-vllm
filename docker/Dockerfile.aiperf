@@ -1,0 +1,11 @@
+FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
+ARG SOURCE_REVISION=unknown
+LABEL org.opencontainers.image.source="https://github.com/sutro-planet/tiny-vllm" \
+      org.opencontainers.image.revision=$SOURCE_REVISION
+ENV PYTHONUNBUFFERED=1 HF_HUB_DISABLE_TELEMETRY=1 TOKENIZERS_PARALLELISM=false
+RUN pip install --no-cache-dir aiperf==0.13.0
+COPY docker/download_model.py /tmp/download_model.py
+RUN python /tmp/download_model.py --tokenizer-only
+COPY benchmarks/aiperf /workloads
+ENTRYPOINT ["aiperf"]
+CMD ["profile", "--config", "/workloads/baseline.yaml"]

@@ -5,6 +5,8 @@ __pycache__/
 *.py[cod]
 
 .venv/
+.venv-*/
+artifacts/
 venv/
 build/
 dist/

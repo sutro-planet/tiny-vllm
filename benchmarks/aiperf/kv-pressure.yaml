@@ -1,0 +1,33 @@
+# Run tiny-vLLM with --max-num-blocks 32 --block-size 16 --max-batch-size 4.
+# Each request fits alone; four 128+64 requests cannot keep all KV simultaneously.
+schemaVersion: "2.0"
+randomSeed: 42
+multiRun:
+  numRuns: ${BENCH_RUNS:3}
+  cooldownSeconds: 3
+  setConsistentSeed: true
+benchmark:
+  model: ${BENCH_MODEL:gpt2}
+  tokenizer: {name: "${BENCH_TOKENIZER:gpt2}"}
+  endpoint:
+    url: ${BENCH_URL:http://127.0.0.1:8000/v1/completions}
+    type: completions
+    streaming: false
+    useServerTokenCount: true
+    timeout: 120
+    extra: {temperature: 0, ignore_eos: true}
+  dataset:
+    type: synthetic
+    entries: ${BENCH_REQUESTS:100}
+    prompts: {isl: 128, osl: 64}
+  phases:
+    - {name: warmup, type: concurrency, requests: 8, concurrency: 4, excludeFromResults: true}
+    - {name: profiling, type: concurrency, requests: "${BENCH_REQUESTS:100}", concurrency: 4}
+  runtime: {ui: none, workers: 1}
+  gpuTelemetry:
+    enabled: ${BENCH_GPU_TELEMETRY:false}
+    collector: pynvml
+  artifacts:
+    dir: ${BENCH_ARTIFACTS:artifacts/aiperf/kv-pressure}
+    summary: [json]
+    records: [jsonl]

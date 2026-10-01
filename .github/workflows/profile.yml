@@ -1,0 +1,202 @@
+name: GPU profile
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to profile
+        required: true
+        type: number
+permissions: {}
+concurrency:
+  group: tiny-vllm-profile-${{ github.event.issue.number || inputs.pr }}
+  cancel-in-progress: false
+jobs:
+  authorize:
+    if: github.event_name == 'workflow_dispatch' || (github.event.issue.pull_request && github.event.comment.body == '/profile')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: write
+    outputs:
+      sha: ${{ steps.request.outputs.sha }}
+      pr: ${{ steps.request.outputs.pr }}
+    steps:
+      - uses: actions/github-script@v7
+        id: request
+        with:
+          script: |
+            const login = context.eventName === 'issue_comment'
+              ? context.payload.comment.user.login : context.actor;
+            const access = await github.rest.repos.getCollaboratorPermissionLevel({
+              ...context.repo, username: login
+            });
+            if (!['admin', 'maintain', 'write'].includes(access.data.permission)) {
+              core.setFailed('Only repository writers can request GPU profiling.');
+              return;
+            }
+            const pr = Number(context.payload.inputs?.pr ?? context.payload.issue.number);
+            const {data} = await github.rest.pulls.get({...context.repo, pull_number: pr});
+            if (data.state !== 'open' || data.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed('Profiling currently requires an open same-repository PR.');
+              return;
+            }
+            core.setOutput('sha', data.head.sha);
+            core.setOutput('pr', pr);
+            await github.rest.issues.createComment({...context.repo, issue_number: pr,
+              body: `GPU profiling queued for \`${data.head.sha}\`. ` +
+                    `[Run](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}). ` +
+                    `The job waits for the RTX 5090; it does not stop other workloads.`});
+  build:
+    needs: authorize
+    runs-on: sutro-k8s-runner-set
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tiny: ${{ steps.tiny.outputs.digest }}
+      client: ${{ steps.client.outputs.digest }}
+    steps:
+      # Infrastructure always comes from the trusted default branch.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.authorize.outputs.sha }}
+          path: candidate
+          persist-credentials: false
+      - name: Stage trusted Docker definitions with candidate package sources
+        run: |
+          rm -rf candidate/docker
+          cp -R harness/docker candidate/docker
+          cp harness/.dockerignore candidate/.dockerignore
+          rm -rf candidate/benchmarks/aiperf
+          mkdir -p candidate/benchmarks/aiperf
+          cp harness/benchmarks/aiperf/*.yaml candidate/benchmarks/aiperf/
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        id: tiny
+        with:
+          context: candidate
+          file: candidate/docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/sutro-planet/tiny-vllm/profile-server:pr-${{ needs.authorize.outputs.pr }}-${{ github.run_id }}
+          build-args: SOURCE_REVISION=${{ needs.authorize.outputs.sha }}
+          cache-from: type=gha,scope=tiny-cuda
+          cache-to: type=gha,scope=tiny-cuda,mode=max
+      - uses: docker/build-push-action@v6
+        id: client
+        with:
+          context: harness
+          file: harness/docker/Dockerfile.aiperf
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/sutro-planet/tiny-vllm/profile-client:run-${{ github.run_id }}
+          build-args: SOURCE_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=aiperf
+          cache-to: type=gha,scope=aiperf,mode=max
+  profile:
+    needs: [authorize, build]
+    runs-on: sutro-k8s-runner-set
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.29.3'
+      - name: Configure namespace-scoped cluster access and image pulls
+        env:
+          PROFILE_KUBECONFIG: ${{ secrets.PROFILE_KUBECONFIG }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          umask 077
+          python - <<'PY'
+          import json, os, base64
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          (root/'profile.kubeconfig').write_text(os.environ['PROFILE_KUBECONFIG'])
+          auth = base64.b64encode((os.environ['GITHUB_ACTOR']+':'+os.environ['GHCR_TOKEN']).encode()).decode()
+          (root/'registry.json').write_text(json.dumps({'auths':{'ghcr.io':{'auth':auth}}}))
+          PY
+          export KUBECONFIG="$RUNNER_TEMP/profile.kubeconfig"
+          echo "KUBECONFIG=$KUBECONFIG" >> "$GITHUB_ENV"
+          kubectl create secret generic "pull-$GITHUB_RUN_ID" -n tiny-vllm-profile \
+            --type=kubernetes.io/dockerconfigjson \
+            --from-file=.dockerconfigjson="$RUNNER_TEMP/registry.json"
+          rm "$RUNNER_TEMP/registry.json"
+      - name: Compare CUDA endpoints
+        env:
+          SOURCE_SHA: ${{ needs.authorize.outputs.sha }}
+          TINY_DIGEST: ${{ needs.build.outputs.tiny }}
+          CLIENT_DIGEST: ${{ needs.build.outputs.client }}
+        run: |
+          python -m benchmarks.kubernetes.run \
+            --tiny-image "ghcr.io/sutro-planet/tiny-vllm/profile-server@$TINY_DIGEST" \
+            --client-image "ghcr.io/sutro-planet/tiny-vllm/profile-client@$CLIENT_DIGEST" \
+            --source-revision "$SOURCE_SHA" --run-id "gh-$GITHUB_RUN_ID" \
+            --pull-secret "pull-$GITHUB_RUN_ID" --output artifacts/gpu-profile
+      - name: Release owned resources
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/profile.kubeconfig" ]; then
+            export KUBECONFIG="$RUNNER_TEMP/profile.kubeconfig"
+            kubectl delete deployment,service,pod -n tiny-vllm-profile \
+              -l "profile-run=gh-$GITHUB_RUN_ID" --ignore-not-found --timeout=90s
+            kubectl delete secret "pull-$GITHUB_RUN_ID" -n tiny-vllm-profile --ignore-not-found
+            rm "$RUNNER_TEMP/profile.kubeconfig"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gpu-profile-${{ github.run_id }}
+          path: artifacts/gpu-profile
+          retention-days: 30
+  report:
+    if: always() && needs.authorize.result == 'success'
+    needs: [authorize, build, profile]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: gpu-profile-${{ github.run_id }}
+          path: profile
+      - uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ needs.authorize.outputs.pr }}
+          SOURCE_SHA: ${{ needs.authorize.outputs.sha }}
+          PROFILE_RESULT: ${{ needs.profile.result }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'profile/report.md';
+            const url = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = fs.existsSync(path) ? fs.readFileSync(path, 'utf8') :
+              `GPU profiling did not complete (${process.env.PROFILE_RESULT}). ` +
+              `Tested commit: \`${process.env.SOURCE_SHA}\`. Check GPU availability and run logs.`;
+            await github.rest.issues.createComment({...context.repo,
+              issue_number: Number(process.env.PR_NUMBER), body: body + `\n\n[Logs and raw artifacts](${url})`});
