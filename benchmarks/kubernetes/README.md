@@ -101,8 +101,15 @@ does not activate a new comment-triggered workflow.
 Prerequisites:
 
 1. The `sutro-k8s-runner-set` organization runner must be available to this repo.
-   It needs Docker for builds and network access to the Kubernetes API. CUDA
-   images are built there to avoid GitHub-hosted runner disk limits.
+   It needs the Docker CLI and network access to the Kubernetes API. Buildx uses
+   a separate rootless BuildKit pod in `tiny-vllm-profile` on `sutro-gpu1`:
+   2 requested / 4 maximum CPUs, 4/8 GiB RAM and a 40 GiB ephemeral-storage limit.
+   The builder requests no GPU. The shared ARC runner's 8 GiB Docker volume is
+   too small for CUDA builds; no large image layers are stored there. Builder
+   resources are labeled per run and removed before profiling, including on failure.
+   Build caches use dedicated `:buildcache` tags in the same GHCR packages, so
+   uploaded CUDA layers can be reused without exporting multi-gigabyte layers to
+   GitHub Actions Cache. Cache export failure does not invalidate a published image.
 2. Repository secret `PROFILE_KUBECONFIG` authenticates as the `profiler` service
    account from `bootstrap.yaml`. Its Role is limited to this namespace and
    cannot access Secrets or deployments in other namespaces. The credential must
@@ -130,9 +137,13 @@ after the trigger does not change the tested revision. Unauthorized requests do
 not build images or access the cluster. Manual dispatch with a PR number uses
 the same permission check.
 
-The runner with cluster credentials checks out only the default branch. Candidate
-code runs inside its model container without the service-account token or host
-mounts. Keep this separation when extending the workflow.
+The profiling runner checks out only the default branch. The build runner stages
+candidate package sources with Docker definitions from the default branch and
+sends that context to the namespace-scoped builder. Kubernetes credentials are
+outside the Docker build context and are never passed into build steps or model
+containers. Candidate code runs inside its build/model container without the
+profiler service-account token or host mounts. Keep this separation when extending
+the workflow.
 
 ## Interpretation
 
