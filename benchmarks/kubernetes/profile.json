@@ -1,0 +1,18 @@
+{
+  "namespace": "tiny-vllm-profile",
+  "node": "sutro-gpu1",
+  "gpu": "NVIDIA GeForce RTX 5090",
+  "model": "/models/gpt2",
+  "model_source": "openai-community/gpt2",
+  "model_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "dtype": "float16",
+  "runs": 3,
+  "requests": 100,
+  "max_batch_size": 4,
+  "max_num_scheduled_tokens": 64,
+  "max_num_blocks": 256,
+  "block_size": 16,
+  "vllm_version": "0.10.2",
+  "attention_backend": "FLASH_ATTN",
+  "vllm_image": "vllm/vllm-openai:v0.10.2@sha256:df2607b26bdda2875de4832f4d08da0055b4b6e3570347f3a849bcc652771dd6"
+}

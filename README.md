@@ -15,6 +15,9 @@ The current scaffold is CPU-only and deterministic by default. It tracks each re
 - GPT-2 real-model smoke uses tiny-vLLM's Torch forward path with flattened scheduled-token inputs and block-backed dense KV tensors; Hugging Face is used only for tokenizer/config/weight loading and oracle checks.
 - GPU paged attention, fragmentation-aware physical block management, and non-GPT-2 architectures remain future work.
 - Benchmarks should compare against vanilla vLLM when real model execution exists.
+- A standalone OpenAI-compatible Completions server batches concurrent requests through one Engine.
+- AIPerf uses that public endpoint; see [the benchmark workflow](benchmarks/README.md).
+- [Kubernetes GPU profiling](benchmarks/kubernetes/README.md) packages CUDA images and compares tiny-vLLM with vLLM on the RTX 5090. The PR `/profile` workflow activates after it is merged into the default branch.
 
 ## Exploration State
 
@@ -38,6 +41,58 @@ python3 scripts/run_tiny_model.py --model sshleifer/tiny-gpt2 --prompt "Hello" -
 python3 scripts/run_tiny_model.py --model gpt2 --prompt "Hello" --max-new-tokens 4 --no-safetensors
 ```
 
+## API Server
+
+Install the optional server and model dependencies, then start a local server:
+
+```bash
+python3 -m pip install -e '.[server,transformers]'
+python3 -m tiny_vllm.server --model sshleifer/tiny-gpt2 --no-safetensors
+```
+
+The installed `tiny-vllm-serve` command is equivalent. Use `--model gpt2` for
+GPT-2, `--device cuda --torch-dtype float16` for CUDA, or
+`--mock --model mock-gemma` for deterministic transport tests without weights.
+
+```bash
+curl http://127.0.0.1:8000/v1/models
+curl http://127.0.0.1:8000/v1/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"sshleifer/tiny-gpt2","prompt":"Hello","max_tokens":16,"temperature":0}'
+```
+
+It also works with the OpenAI Python client (installed separately):
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="unused")
+result = client.completions.create(
+    model="sshleifer/tiny-gpt2", prompt="Hello", max_tokens=16, temperature=0,
+)
+print(result.choices[0].text)
+```
+
+Supported routes: `GET /health`, `GET /v1/models`, and `POST /v1/completions`.
+This first API slice supports one text prompt (or one-element string list),
+non-streaming greedy generation, `n=1`, and fixed `max_tokens` output length
+(default 16, EOS ignored). Omitted temperature defaults to zero. Unsupported
+sampling, stop strings, chat completions, and streaming are not implemented;
+unsupported completion options return JSON errors rather than being ignored.
+Usage counts come from tokenizer input IDs and Engine output token counts.
+
+One process owns one Engine and one model worker thread. Incoming requests join
+between engine steps, allowing continuous batching while HTTP stays responsive.
+`--max-pending` bounds accepted requests (default 256); excess requests receive
+429. Context overflow is rejected per request, and fatal worker failure marks
+health unavailable. Accepted work drains on shutdown; disconnected requests
+continue to completion because the Engine has no cancellation API yet.
+The service preflights prompt tokenization for context checks and usage counts;
+Engine tokenizes again on admission. This cost is included in API latency.
+
+Pass `http://127.0.0.1:8000/v1/completions` to AIPerf using the
+[benchmark configs](benchmarks/README.md).
+
 ## Layout
 
 - `src/tiny_vllm/config.py`: engine configuration and validation.
@@ -49,8 +104,9 @@ python3 scripts/run_tiny_model.py --model gpt2 --prompt "Hello" --max-new-tokens
 - `src/tiny_vllm/model_runner.py`: mock and optional Transformers oracle execution-batch boundary.
 - `src/tiny_vllm/torch_gpt2.py`: tiny Torch GPT-2 forward path and block-backed dense KV runner.
 - `src/tiny_vllm/engine.py`: request lifecycle orchestration.
-- `tests/`: CPU-only behavior tests.
-- `benchmarks/`: placeholder benchmark entry points.
+- `src/tiny_vllm/server.py`: optional OpenAI-compatible Completions HTTP server.
+- `tests/`: CPU behavior and opt-in model integration tests.
+- `benchmarks/`: AIPerf workload configs and optional result collection wrapper.
 - `scripts/`: local smoke-test commands.
 - `docs/vllm-gap-map.md`: living vLLM gap and exploration state map.
 - `agent/skills/tiny-vllm/SKILL.md`: repo-specific Codex workflow and PR discipline.

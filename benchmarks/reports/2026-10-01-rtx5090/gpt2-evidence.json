@@ -1,0 +1,402 @@
+{
+  "manifest": {
+    "run_id": "gpt2-20261001-r2",
+    "source_revision": "fe833e410b34cc53fd28540d4d6ebd5ff72d2115",
+    "harness_revision": "be79e19136fbf5d1fcbeb406d8c5a6703bf5736a",
+    "harness_status": " M agent/skills/tiny-vllm/SKILL.md\n M benchmarks/kubernetes/README.md\n M benchmarks/kubernetes/profile.json\n M benchmarks/kubernetes/report.py\n M benchmarks/kubernetes/run.py\n M docker/Dockerfile\n M docker/Dockerfile.aiperf\n M docker/download_model.py\n M docs/vllm-gap-map.md\n M tests/test_gpu_profile.py\n?? benchmarks/kubernetes/tiny-gpt2.json\n?? benchmarks/reports/\n",
+    "started_at": "2026-10-01T21:52:18.182425+00:00",
+    "config": {
+      "namespace": "tiny-vllm-profile",
+      "node": "sutro-gpu1",
+      "gpu": "NVIDIA GeForce RTX 5090",
+      "model": "/models/gpt2",
+      "model_source": "openai-community/gpt2",
+      "model_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+      "dtype": "float16",
+      "runs": 3,
+      "requests": 100,
+      "max_batch_size": 4,
+      "max_num_scheduled_tokens": 64,
+      "max_num_blocks": 256,
+      "block_size": 16,
+      "vllm_version": "0.10.2",
+      "attention_backend": "FLASH_ATTN",
+      "vllm_image": "vllm/vllm-openai:v0.10.2@sha256:df2607b26bdda2875de4832f4d08da0055b4b6e3570347f3a849bcc652771dd6"
+    },
+    "images": {
+      "tiny": "ghcr.io/sutro-planet/tiny-vllm@sha256:8756e12039c73e44903856202973a19c380fe0ee864daa95f37fe87476ff1c1c",
+      "vllm": "vllm/vllm-openai:v0.10.2@sha256:df2607b26bdda2875de4832f4d08da0055b4b6e3570347f3a849bcc652771dd6",
+      "client": "ghcr.io/sutro-planet/tiny-vllm-aiperf@sha256:5794e626c86afd2ac03171d8f4db032f29139566880b19393e02b2b1019400b6"
+    },
+    "servers": {
+      "tiny": {
+        "pod": "tiny-gpt2-20261001-r2-598865fb96-5n9zq",
+        "node": "sutro-gpu1",
+        "image_id": "ghcr.io/sutro-planet/tiny-vllm@sha256:8756e12039c73e44903856202973a19c380fe0ee864daa95f37fe87476ff1c1c",
+        "endpoint": "http://tiny-gpt2-20261001-r2.tiny-vllm-profile.svc:8000/v1/completions",
+        "client_image_id": "ghcr.io/sutro-planet/tiny-vllm-aiperf@sha256:5794e626c86afd2ac03171d8f4db032f29139566880b19393e02b2b1019400b6",
+        "status": "passed"
+      },
+      "vllm": {
+        "pod": "vllm-gpt2-20261001-r2-8548979d7-2m7gj",
+        "node": "sutro-gpu1",
+        "image_id": "docker.io/vllm/vllm-openai@sha256:df2607b26bdda2875de4832f4d08da0055b4b6e3570347f3a849bcc652771dd6",
+        "endpoint": "http://vllm-gpt2-20261001-r2.tiny-vllm-profile.svc:8000/v1/completions",
+        "client_image_id": "ghcr.io/sutro-planet/tiny-vllm-aiperf@sha256:5794e626c86afd2ac03171d8f4db032f29139566880b19393e02b2b1019400b6",
+        "status": "passed"
+      }
+    },
+    "status": "passed",
+    "finished_at": "2026-10-01T22:05:12.822664+00:00"
+  },
+  "comparison": {
+    "tiny": {
+      "batch_c2": {
+        "latency_p50_ms": 231.4113655,
+        "latency_p95_ms": 239.8078469,
+        "latency_p99_ms": 243.1190594,
+        "requests_per_second": 8.564256228529068,
+        "output_tokens_per_second": 274.0561993129302,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          128.0,
+          128.0,
+          128.0
+        ],
+        "output_tokens": [
+          32.0,
+          32.0,
+          32.0
+        ]
+      },
+      "batch_c4": {
+        "latency_p50_ms": 268.4682835,
+        "latency_p95_ms": 280.8915976,
+        "latency_p99_ms": 296.76485936000006,
+        "requests_per_second": 14.684019711166103,
+        "output_tokens_per_second": 469.8886307573153,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          128.0,
+          128.0,
+          128.0
+        ],
+        "output_tokens": [
+          32.0,
+          32.0,
+          32.0
+        ]
+      },
+      "decode_32_128": {
+        "latency_p50_ms": 983.5002414999999,
+        "latency_p95_ms": 1036.5893285,
+        "latency_p99_ms": 1085.27757527,
+        "requests_per_second": 4.038285588416968,
+        "output_tokens_per_second": 516.9005553173719,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          32.0,
+          32.0,
+          32.0
+        ],
+        "output_tokens": [
+          128.0,
+          128.0,
+          128.0
+        ]
+      },
+      "latency_c1": {
+        "latency_p50_ms": 196.196054,
+        "latency_p95_ms": 223.89238799999998,
+        "latency_p99_ms": 228.25805918,
+        "requests_per_second": 4.99629104456247,
+        "output_tokens_per_second": 159.88131342599905,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          128.0,
+          128.0,
+          128.0
+        ],
+        "output_tokens": [
+          32.0,
+          32.0,
+          32.0
+        ]
+      },
+      "mixed_prefill": {
+        "latency_p50_ms": 272.242013,
+        "latency_p95_ms": 286.74394885000004,
+        "latency_p99_ms": 296.7132315000001,
+        "requests_per_second": 14.491487892531342,
+        "output_tokens_per_second": 463.72761256100296,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          144.0,
+          144.0,
+          144.0
+        ],
+        "output_tokens": [
+          32.0,
+          32.0,
+          32.0
+        ]
+      },
+      "prefill_512_16": {
+        "latency_p50_ms": 255.230755,
+        "latency_p95_ms": 269.22495225,
+        "latency_p99_ms": 301.2675343200003,
+        "requests_per_second": 15.253811310200945,
+        "output_tokens_per_second": 244.06098096321512,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          512.0,
+          512.0,
+          512.0
+        ],
+        "output_tokens": [
+          16.0,
+          16.0,
+          16.0
+        ]
+      },
+      "queue_c8": {
+        "latency_p50_ms": 535.2496934999999,
+        "latency_p95_ms": 563.4122934,
+        "latency_p99_ms": 565.4476882100001,
+        "requests_per_second": 14.745344068253663,
+        "output_tokens_per_second": 471.85101018411723,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          128.0,
+          128.0,
+          128.0
+        ],
+        "output_tokens": [
+          32.0,
+          32.0,
+          32.0
+        ]
+      }
+    },
+    "vllm": {
+      "batch_c2": {
+        "latency_p50_ms": 76.095777,
+        "latency_p95_ms": 82.49924389999998,
+        "latency_p99_ms": 86.01099762,
+        "requests_per_second": 25.715414903134796,
+        "output_tokens_per_second": 822.8932769003135,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          128.0,
+          128.0,
+          128.0
+        ],
+        "output_tokens": [
+          32.0,
+          32.0,
+          32.0
+        ]
+      },
+      "batch_c4": {
+        "latency_p50_ms": 78.759704,
+        "latency_p95_ms": 84.3263654,
+        "latency_p99_ms": 90.08884662000003,
+        "requests_per_second": 49.70465333448525,
+        "output_tokens_per_second": 1590.548906703528,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          128.0,
+          128.0,
+          128.0
+        ],
+        "output_tokens": [
+          32.0,
+          32.0,
+          32.0
+        ]
+      },
+      "decode_32_128": {
+        "latency_p50_ms": 278.548728,
+        "latency_p95_ms": 287.0256895,
+        "latency_p99_ms": 291.71258962,
+        "requests_per_second": 14.280534815299754,
+        "output_tokens_per_second": 1827.9084563583685,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          32.0,
+          32.0,
+          32.0
+        ],
+        "output_tokens": [
+          128.0,
+          128.0,
+          128.0
+        ]
+      },
+      "latency_c1": {
+        "latency_p50_ms": 72.4417095,
+        "latency_p95_ms": 75.6680734,
+        "latency_p99_ms": 79.13340631000001,
+        "requests_per_second": 13.570799148555304,
+        "output_tokens_per_second": 434.26557275376973,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          128.0,
+          128.0,
+          128.0
+        ],
+        "output_tokens": [
+          32.0,
+          32.0,
+          32.0
+        ]
+      },
+      "mixed_prefill": {
+        "latency_p50_ms": 79.07824649999999,
+        "latency_p95_ms": 83.48273095,
+        "latency_p99_ms": 91.44216197000004,
+        "requests_per_second": 49.67570756745308,
+        "output_tokens_per_second": 1589.6226421584986,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          144.0,
+          144.0,
+          144.0
+        ],
+        "output_tokens": [
+          32.0,
+          32.0,
+          32.0
+        ]
+      },
+      "prefill_512_16": {
+        "latency_p50_ms": 77.06928099999999,
+        "latency_p95_ms": 82.28498909999999,
+        "latency_p99_ms": 105.46377890000011,
+        "requests_per_second": 49.987336757966446,
+        "output_tokens_per_second": 799.7973881274631,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          512.0,
+          512.0,
+          512.0
+        ],
+        "output_tokens": [
+          16.0,
+          16.0,
+          16.0
+        ]
+      },
+      "queue_c8": {
+        "latency_p50_ms": 150.59937349999998,
+        "latency_p95_ms": 156.7282037,
+        "latency_p99_ms": 169.13753473000003,
+        "requests_per_second": 52.24393925688296,
+        "output_tokens_per_second": 1671.8060562202547,
+        "runs": 3,
+        "requests_per_run": 100,
+        "input_tokens": [
+          128.0,
+          128.0,
+          128.0
+        ],
+        "output_tokens": [
+          32.0,
+          32.0,
+          32.0
+        ]
+      }
+    }
+  },
+  "environment": {
+    "tiny": {
+      "torch": "2.8.0+cu128",
+      "cuda": "12.8",
+      "device": "cuda:0",
+      "gpu": "NVIDIA GeForce RTX 5090",
+      "capability": [
+        12,
+        0
+      ],
+      "packages": {
+        "transformers": "4.56.2"
+      },
+      "nvidia_smi": "NVIDIA GeForce RTX 5090, GPU-c87957f1-1938-7c1f-d785-fe2876910df6, 575.57.08, 32607 MiB, 1379 MiB, 0 %\n"
+    },
+    "vllm": {
+      "torch": "2.8.0+cu128",
+      "cuda": "12.8",
+      "device": "cuda:0",
+      "gpu": "NVIDIA GeForce RTX 5090",
+      "capability": [
+        12,
+        0
+      ],
+      "packages": {
+        "transformers": "4.56.1"
+      },
+      "nvidia_smi": "NVIDIA GeForce RTX 5090, GPU-c87957f1-1938-7c1f-d785-fe2876910df6, 575.57.08, 32607 MiB, 1653 MiB, 0 %\n"
+    }
+  },
+  "generation_probes": {
+    "tiny": {
+      "id": "cmpl-2a3338b397e34905b4b70a7a5fb54318",
+      "object": "text_completion",
+      "created": 1790891557,
+      "model": "/models/gpt2",
+      "choices": [
+        {
+          "index": 0,
+          "text": "HelloHelloHelloHello",
+          "logprobs": null,
+          "finish_reason": "length"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 32,
+        "completion_tokens": 4,
+        "total_tokens": 36
+      }
+    },
+    "vllm": {
+      "id": "cmpl-fff11cc23e94486fb705fcd2a996c640",
+      "object": "text_completion",
+      "created": 1790892012,
+      "model": "/models/gpt2",
+      "choices": [
+        {
+          "index": 0,
+          "text": "HelloHelloHelloHello",
+          "logprobs": null,
+          "finish_reason": "length",
+          "stop_reason": null,
+          "token_ids": null,
+          "prompt_logprobs": null,
+          "prompt_token_ids": null
+        }
+      ],
+      "service_tier": null,
+      "system_fingerprint": null,
+      "usage": {
+        "prompt_tokens": 32,
+        "total_tokens": 36,
+        "completion_tokens": 4,
+        "prompt_tokens_details": null
+      },
+      "kv_transfer_params": null
+    }
+  }
+}

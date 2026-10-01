@@ -12,6 +12,7 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = [
+    "aiohttp>=3.10,<4",
     "mypy>=1.10",
     "pytest>=8.0",
     "ruff>=0.6",
@@ -20,6 +21,12 @@ transformers = [
     "torch>=2.4",
     "transformers>=4.44",
 ]
+server = [
+    "aiohttp>=3.10,<4",
+]
+
+[project.scripts]
+tiny-vllm-serve = "tiny_vllm.server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -51,6 +58,7 @@ module = [
 ]
 ignore_missing_imports = true
 follow_imports = "skip"
+follow_imports_for_stubs = true
 
 [[tool.mypy.overrides]]
 module = "tiny_vllm.torch_gpt2"

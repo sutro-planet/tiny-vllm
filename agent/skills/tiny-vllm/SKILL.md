@@ -1,6 +1,6 @@
 ---
 name: tiny-vllm
-description: Guide tiny-vllm development as a learning-oriented modern LLM inference framework. Use when working in this repo on architecture, implementation, benchmarking, scheduling, continuous batching, KV cache management, paged attention, GPU kernels, GPU development/debug setup on gpu1.sutroplanet.com, research evaluation, ablation studies, comparisons against vLLM, PR single-commit hygiene, or addressing Gemini/GitHub PR review feedback.
+description: Guide tiny-vllm development as a learning-oriented modern LLM inference framework. Use when working in this repo on architecture, implementation, benchmarking, scheduling, continuous batching, KV cache management, paged attention, GPU kernels, CUDA container deployment to the Kubernetes RTX 5090 node, PR /profile reports, research evaluation, ablation studies, comparisons against vLLM, PR single-commit hygiene, or addressing Gemini/GitHub PR review feedback.
 ---
 
 # Tiny vLLM
@@ -16,14 +16,14 @@ Prefer one clear implementation path. Avoid permanent configuration toggles, com
 ## Default Scope
 
 - Optimize first for a single-node, single-GPU learning system.
-- Use the available smoke-test GPU host `gpu1.sutroplanet.com`, assumed to provide one RTX 5090-class GPU.
+- Use Kubernetes node `sutro-gpu1` (RTX 5090) for reproducible CUDA profiling. GPU availability is coordinated by the user; never pause unrelated workloads or bypass the GPU resource request.
 - Assume one autoregressive model family at first. Use Gemma 4 30B as the default exemplar from the project brief unless the repo or available model artifacts establish a different target.
 - Specialize for one GPU architecture when that simplifies kernels, memory layout, or scheduling. Do not generalize early for portability.
 - Favor readable structure and explicit data flow over clever abstractions. Add abstraction only when it reduces real repeated complexity.
 
 ## GPU Development Environment
 
-Use `gpu1.sutroplanet.com` as the canonical remote smoke-test and debugging host. Treat the local repo and GitHub branch as the source of truth; use the remote checkout to reproduce, profile, and debug GPU behavior.
+Use the Kubernetes image workflow in `benchmarks/kubernetes/README.md` for performance reports. It runs tiny-vLLM and an unmodified vLLM baseline sequentially on the same RTX 5090, using separate OpenAI-compatible endpoints and one AIPerf workload. Treat the tested commit, immutable model revision, image digests and exported artifacts as the source of truth. The SSH workflow below remains available for interactive debugging.
 
 Prefer the repo-owned VS Code tasks for routine GPU smoke checks instead of manual SSH. Use `Tiny vLLM: GPU Smoke Current Branch` for reproducible PR validation after committing and pushing; use `Tiny vLLM: GPU Smoke Dirty Workspace` only for short-lived scratch debugging. The tasks call `scripts/dev/gpu_smoke.sh`, which also supports `gpt2` variants for model smoke testing.
 
@@ -97,6 +97,19 @@ Choose benchmark workloads that expose the behavior being changed:
 - Correctness-sensitive work: compare generated tokens, logits where practical, cache layout invariants, and request completion behavior.
 
 Report enough context for a future agent to reproduce the result: git state if available, host, GPU, model, precision, workload, baseline command, tiny-vllm command, and key metrics.
+
+## PR GPU Profiling
+
+For `/profile` requests, read `benchmarks/kubernetes/README.md` and use the repository workflow `.github/workflows/profile.yml`. A repository writer's exact `/profile` PR comment requests a report for the head SHA captured when the job starts; it does not request implementation changes. The workflow must already exist on the default branch, and requires the configured namespace-scoped cluster credential and organization runner scale set.
+
+Keep these invariants when changing or running the workflow:
+
+- Build the candidate into an immutable image; tiny-vLLM must explicitly use CUDA. Verify the actual GPU and CUDA device before accepting numbers. Never substitute CPU results for a GPU report.
+- Use the pinned `openai-community/gpt2` (124M) snapshot for paired PR reports, with the same dtype, prompt/output lengths, seed, concurrency, warmup and repetitions. Keep `sshleifer/tiny-gpt2` as a tiny-vLLM smoke/overhead case: its head_dim=1 is unsupported by the pinned vLLM CUDA attention kernels. Record vLLM backend and eager/graph settings; do not silently change the model to work around an unsupported head size.
+- Run the two endpoints sequentially on the same GPU. Request `nvidia.com/gpu: 1` and wait if unavailable. Manage only resources owned by the profiling run in `tiny-vllm-profile`; the user coordinates other GPU users. Never scale another application's deployment, change device-plugin sharing, or bypass scheduler allocation.
+- Keep Kubernetes credentials out of candidate images and model containers. Run trusted orchestration from the default branch, verify the commenter's current repository write permission, and capture the exact candidate SHA. Do not execute PR scripts on the runner with cluster credentials.
+- Execute a real generation preflight; health readiness alone does not validate attention kernels. Publish a paired comparison only after all expected scenarios/repeats completed without errors, server restarts or length mismatches. On failure, retain complete validated engine results in an explicitly incomplete report without computing cross-engine speedups. Report latency and throughput with raw artifacts and image/runtime identity. Non-streaming endpoints do not provide TTFT/ITL. Tiny GPT-2 numbers primarily measure serving and launch overhead, not larger-model GPU performance.
+- On failure or unavailable GPU, preserve logs and report the failure; do not fabricate results or silently change test settings. Cleanup is limited to the run's labeled resources. Automatic reports may be posted to the requesting PR as part of the user-authorized `/profile` workflow.
 
 ## PR Review Discipline
 

@@ -1,0 +1,10 @@
+**
+!pyproject.toml
+!README.md
+!src/
+!src/**
+!benchmarks/
+!benchmarks/aiperf/
+!benchmarks/aiperf/**
+!docker/
+!docker/**

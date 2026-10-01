@@ -1,0 +1,74 @@
+schemaVersion: "2.0"
+randomSeed: 42
+
+multiRun:
+  numRuns: ${BENCH_RUNS:3}
+  cooldownSeconds: 3
+  setConsistentSeed: true
+
+benchmark:
+  model: ${BENCH_MODEL:gpt2}
+  tokenizer:
+    name: ${BENCH_TOKENIZER:gpt2}
+  endpoint:
+    url: ${BENCH_URL:http://127.0.0.1:8000/v1/completions}
+    type: completions
+    streaming: false
+    useServerTokenCount: true
+    timeout: 120
+    extra: {temperature: 0, ignore_eos: true}
+  dataset:
+    type: synthetic
+    entries: ${BENCH_REQUESTS:100}
+    prompts: {isl: 128, osl: 32}
+  phases:
+    - {name: warmup, type: concurrency, requests: 8, concurrency: 4, excludeFromResults: true}
+    - {name: profiling, type: concurrency, requests: "${BENCH_REQUESTS:100}", concurrency: 4}
+  runtime: {ui: none, workers: 1}
+  gpuTelemetry:
+    enabled: ${BENCH_GPU_TELEMETRY:false}
+    collector: pynvml
+  artifacts:
+    dir: ${BENCH_ARTIFACTS:artifacts/aiperf/baseline}
+    summary: [json]
+    records: [jsonl]
+
+sweep:
+  type: scenarios
+  runs:
+    - name: latency_c1
+      benchmark:
+        phases:
+          - {name: warmup, concurrency: 1}
+          - {name: profiling, concurrency: 1}
+    - name: batch_c2
+      benchmark:
+        phases:
+          - {name: warmup, concurrency: 2}
+          - {name: profiling, concurrency: 2}
+    - name: batch_c4
+      benchmark:
+        phases:
+          - {name: profiling, concurrency: 4}
+    - name: queue_c8
+      benchmark:
+        phases:
+          - {name: warmup, concurrency: 8}
+          - {name: profiling, concurrency: 8}
+    - name: prefill_512_16
+      benchmark:
+        dataset:
+          prompts: {isl: 512, osl: 16}
+    - name: decode_32_128
+      benchmark:
+        dataset:
+          prompts: {isl: 32, osl: 128}
+    - name: mixed_prefill
+      benchmark:
+        dataset:
+          prompts:
+            isl:
+              peaks:
+                - {mean: 32, stddev: 0, weight: 50}
+                - {mean: 256, stddev: 0, weight: 50}
+            osl: 32

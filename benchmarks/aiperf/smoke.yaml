@@ -1,0 +1,29 @@
+# Validates transport and accounting only; mock ISL uses whitespace tokenization.
+schemaVersion: "2.0"
+randomSeed: 42
+benchmark:
+  model: ${BENCH_MODEL:mock-gemma}
+  tokenizer: {name: "${BENCH_TOKENIZER:builtin}"}
+  endpoint:
+    url: ${BENCH_URL:http://127.0.0.1:8000/v1/completions}
+    type: completions
+    streaming: false
+    useServerTokenCount: true
+    timeout: 30
+    extra: {temperature: 0, ignore_eos: true}
+  dataset:
+    type: file
+    format: single_turn
+    records:
+      - {text: "one two three four five six", output_length: 4}
+      - {text: "one two", output_length: 4}
+      - {text: "one two three four five six seven eight", output_length: 4}
+  phases:
+    - {name: warmup, type: concurrency, requests: 2, concurrency: 2, excludeFromResults: true}
+    - {name: profiling, type: concurrency, requests: 8, concurrency: 4}
+  runtime: {ui: none, workers: 1}
+  gpuTelemetry: {enabled: false}
+  artifacts:
+    dir: ${BENCH_ARTIFACTS:artifacts/aiperf/smoke}
+    summary: [json]
+    records: [jsonl]

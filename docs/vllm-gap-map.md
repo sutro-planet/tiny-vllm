@@ -139,6 +139,13 @@ Update rule:
   - Vanilla vLLM baseline commands
   - tiny-vLLM comparison commands
   - Reproducibility metadata
+  - **OpenAI-compatible serving and AIPerf workloads (2026-10-01)** `[explored]`
+    - Local AIPerf supports schema-2.0 YAML, named scenario sweeps, and repeated runs. See `~/workspace/aiperf/docs/tutorials/yaml-config.md` and `docs/tutorials/openai-text-endpoints.md` in that checkout.
+    - `tiny_vllm.server` serves `/v1/completions`, `/v1/models`, and `/health` on one shared Engine. The first API subset is non-streaming, greedy, fixed-length text completion. Context preflight, usage accounting, queue limits, and HTTP errors belong to the service layer; Engine/config/output contracts are unchanged.
+    - AIPerf consumes only the public completions endpoint. Baseline cells cover concurrency, prefill/decode shape, and mixed lengths; a separate recipe compares KV capacity pressure without claiming to observe internal preemptions.
+    - `benchmarks/run_aiperf.py` optionally records client/config provenance and checks result completeness, request failures, and output length. Server provenance must be supplied separately. `benchmarks/README.md` defines matching eager vLLM settings with prefix caching disabled.
+    - Containerized GPU profiling `[explored]`: `benchmarks/kubernetes/` builds CUDA 12.8 images with immutable GPT-2 snapshots, runs tiny-vLLM and a pinned upstream vLLM baseline sequentially on `sutro-gpu1`, and checks AIPerf results before report generation. `.github/workflows/profile.yml` defines trusted-writer `/profile` PR triggers; activation requires the workflow on the default branch. The tiny-gpt2 CUDA matrix passed on the RTX 5090 (21 runs, 2,100 measured requests). The pinned vLLM cannot execute tiny-gpt2 head_dim=1; use GPT-2 124M for the paired baseline and keep the tiny model as a separate overhead case. The GPT-2 124M paired matrix passed all 42 runs (4,200 measured requests); vLLM eager throughput was 2.72–3.54× tiny-vLLM across the seven cells. See `benchmarks/reports/2026-10-01-rtx5090/`. Comment-trigger integration remains pending default-branch activation.
+    - Remaining work: broader model-output parity on the target host, streaming TTFT/ITL, internal profiler integration, and measured optimization ablations.
 
 - **Distributed and multi-GPU execution** `[not-now]`
   - Tensor parallelism
